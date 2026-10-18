@@ -1,0 +1,15 @@
+# Python 缓存
+__pycache__/
+*.py[cod]
+
+# PyInstaller 构建产物（exe 请上传到 GitHub Release）
+build/
+dist/
+*.spec
+
+# 验证/调试用临时截图
+_dev/exe_*.png
+
+# 系统文件
+Thumbs.db
+desktop.ini
