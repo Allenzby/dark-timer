@@ -20,8 +20,8 @@ toggle · Single portable exe · Built with Python + Tkinter, tested (42 asserti
 
 ## 下载使用
 
-从 **Releases** 下载 `计时器.exe`，双击运行——无需安装、无需 Python 环境，
-可拷贝到任意 Windows 电脑。
+从 **[Releases](../../releases)** 页面下载 **`timer.exe`**（约 9 MB），双击运行——
+无需安装、无需 Python 环境，可拷贝到任意 Windows 电脑。
 
 ## 从源码运行 / 打包
 
@@ -36,6 +36,9 @@ python _dev\test_timer.py
 python -m PyInstaller --noconfirm --onefile --windowed `
     --name "计时器" --icon icon.ico --add-data "icon.ico;." timer.py
 ```
+
+> 发布到 GitHub Release 时，建议把文件重命名为英文 `timer.exe` 再上传，
+> 避免中文文件名在部分系统/下载工具下出现乱码。
 
 ## 项目结构
 
