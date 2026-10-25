@@ -9,6 +9,8 @@ dist/
 
 # 验证/调试用临时截图
 _dev/exe_*.png
+_dev/tb_*.png
+_dev/*.zoom.png
 
 # 系统文件
 Thumbs.db

@@ -53,6 +53,186 @@ def flat_button(parent, **kw):
     return tk.Button(parent, **kw)
 
 
+# =========================================================
+# Windows 任务栏：进度条 + 到点图标闪烁
+# =========================================================
+IS_WINDOWS = sys.platform == "win32"
+
+# 进度条状态（ITaskbarList3::SetProgressState）
+TB_NONE = 0      # 不显示
+TB_INDET = 1     # 不确定（跑马灯）
+TB_NORMAL = 2    # 正常（主题色）
+TB_PAUSED = 8    # 暂停（黄色）
+TB_ERROR = 4     # 出错/到点（红色）
+
+if IS_WINDOWS:
+    import ctypes
+    from ctypes import wintypes as _wt
+
+    class _GUID(ctypes.Structure):
+        _fields_ = [("Data1", ctypes.c_ulong), ("Data2", ctypes.c_ushort),
+                    ("Data3", ctypes.c_ushort), ("Data4", ctypes.c_ubyte * 8)]
+
+    def _guid(s):
+        g = _GUID()
+        p = s.strip("{}").split("-")
+        g.Data1 = int(p[0], 16)
+        g.Data2 = int(p[1], 16)
+        g.Data3 = int(p[2], 16)
+        for i, v in enumerate(bytes.fromhex(p[3] + p[4])):
+            g.Data4[i] = v
+        return g
+
+    def _vcall(obj, idx, restype, argtypes, *args):
+        """按 COM 对象 vtable 下标调用（纯 ctypes，无需 pywin32）"""
+        vtbl = ctypes.cast(obj, ctypes.POINTER(ctypes.c_void_p))[0]
+        fn = ctypes.cast(vtbl, ctypes.POINTER(ctypes.c_void_p))[idx]
+        proto = ctypes.WINFUNCTYPE(restype, ctypes.c_void_p, *argtypes)
+        return proto(fn)(obj, *args)
+
+    class _FLASHWINFO(ctypes.Structure):
+        _fields_ = [("cbSize", ctypes.c_ulong), ("hwnd", _wt.HWND),
+                    ("dwFlags", ctypes.c_ulong), ("uCount", ctypes.c_ulong),
+                    ("dwTimeout", ctypes.c_ulong)]
+
+
+class TaskbarProgress:
+    """任务栏进度条 + 闪烁；任何失败都静默降级，不影响计时器本身"""
+
+    def __init__(self, root):
+        self._ok = False
+        self._hwnd = 0
+        self._tb = None
+        self._state = None
+        self._last_value = None
+        self._last_sent = 0.0
+        self._flashing = False
+        if not IS_WINDOWS:
+            return
+        try:
+            self._init(root)
+            self._ok = True
+        except Exception:
+            self._ok = False
+
+    def _init(self, root):
+        user32 = ctypes.windll.user32
+        ole32 = ctypes.windll.ole32
+        self._root = root
+        root.update_idletasks()          # 确保窗口已 realize
+        hwnd = self._real_hwnd()
+        if not hwnd:
+            raise RuntimeError("bad hwnd")
+        ole32.CoInitializeEx.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+        ole32.CoInitializeEx(None, 2)  # 已被初始化过也无妨
+
+        clsid = _guid("{56FDF344-FD6D-11d0-958A-006097C9A090}")  # TaskbarList
+        iid = _guid("{EA1AFB91-9E28-4B86-90E9-9E9F8A5EEFAF}")    # ITaskbarList3
+        tb = ctypes.c_void_p()
+        ole32.CoCreateInstance.argtypes = [
+            ctypes.POINTER(_GUID), ctypes.c_void_p, ctypes.c_ulong,
+            ctypes.POINTER(_GUID), ctypes.POINTER(ctypes.c_void_p)]
+        hr = ole32.CoCreateInstance(ctypes.byref(clsid), None, 1,
+                                    ctypes.byref(iid), ctypes.byref(tb))
+        if hr != 0 or not tb.value:
+            raise RuntimeError("CoCreateInstance 0x%08X" % (hr & 0xFFFFFFFF))
+        hr = _vcall(tb, 3, ctypes.c_long, ())  # HrInit
+        if hr != 0:
+            raise RuntimeError("HrInit 0x%08X" % (hr & 0xFFFFFFFF))
+        self._hwnd, self._tb = hwnd, tb
+
+    def _real_hwnd(self):
+        """取顶层窗口句柄：winfo_id 是子窗口，父窗口才是任务栏认的那个。
+        窗口未映射时 GetParent 可能失败，所以每次用时都重新校验。"""
+        try:
+            user32 = ctypes.windll.user32
+            wid = self._root.winfo_id()
+            wid = user32.GetParent(wid) or wid
+            if user32.IsWindow(wid):
+                return wid
+        except Exception:
+            pass
+        return 0
+
+    def _hw(self):
+        if not self._ok:
+            return 0
+        hwnd = self._real_hwnd()
+        if hwnd:
+            self._hwnd = hwnd
+        return hwnd
+
+    # ---------- 进度条 ----------
+    def set_state(self, state):
+        if not self._ok or state == self._state:
+            return
+        hwnd = self._hw()
+        if not hwnd:
+            return
+        hr = _vcall(self._tb, 10, ctypes.c_long,
+                    (_wt.HWND, ctypes.c_ulong), hwnd, state)
+        if hr == 0:
+            self._state = state
+            self._last_value = None  # 状态切换后强制重写一次数值
+
+    def progress(self, value, total, state=TB_NORMAL):
+        """value/total，任务栏从满逐渐退（value = 剩余量）"""
+        if not self._ok:
+            return
+        hwnd = self._hw()
+        if not hwnd:
+            return
+        value = max(0, int(value))
+        total = max(1, int(total))
+        now = time.monotonic()
+        if value != self._last_value and now - self._last_sent >= 0.08:
+            hr = _vcall(self._tb, 9, ctypes.c_long,
+                        (_wt.HWND, ctypes.c_ulong, ctypes.c_ulong),
+                        hwnd, min(value, total), total)
+            if hr == 0:
+                self._last_value = value
+                self._last_sent = now
+        self.set_state(state)
+
+    def clear(self):
+        self.set_state(TB_NONE)
+        self.stop_flash()
+
+    # ---------- 图标闪烁 ----------
+    def flash(self):
+        if not self._ok or self._flashing:
+            return
+        hwnd = self._hw()
+        if not hwnd:
+            return
+        try:
+            f = self._flashinfo(hwnd)
+            f.dwFlags = 0x03 | 0x0C   # FLASHW_ALL | FLASHW_TIMERNOFG
+            f.uCount = 5
+            ctypes.windll.user32.FlashWindowEx(ctypes.byref(f))
+            self._flashing = True
+        except Exception:
+            pass
+
+    def stop_flash(self):
+        if not self._ok or not self._flashing:
+            return
+        try:
+            f = self._flashinfo(self._hw() or self._hwnd)
+            f.dwFlags = 0   # FLASHW_STOP
+            ctypes.windll.user32.FlashWindowEx(ctypes.byref(f))
+        except Exception:
+            pass
+        self._flashing = False
+
+    def _flashinfo(self, hwnd):
+        f = _FLASHWINFO()
+        f.cbSize = ctypes.sizeof(_FLASHWINFO)
+        f.hwnd = hwnd
+        f.dwTimeout = 0
+        return f
+
+
 class App:
     def __init__(self, root: tk.Tk):
         self.root = root
@@ -69,6 +249,7 @@ class App:
         self.cd_state = "idle"           # idle | running | paused | finished
         self.cd_remaining = 0.0
         self.cd_target = 0.0
+        self.cd_total = 0.0              # 本次倒计时总长（进度条用）
 
         # 秒表状态
         self.sw_running = False
@@ -81,9 +262,12 @@ class App:
         self._last_status = None
         self._last_primary = None
         self._last_color = None
+        self._alarm_open = False        # 到点弹窗是否正在显示
 
         self._build()
         self._bind_keys()
+        self.tb = TaskbarProgress(root)          # 任务栏进度 + 闪烁
+        root.bind("<FocusIn>", self._on_focus)   # 窗口被激活时停止闪烁
         self._tick()
 
     # ==================================================
@@ -351,7 +535,9 @@ class App:
                 return
             self.cd_remaining = float(total)
             self.cd_target = now + self.cd_remaining
+            self.cd_total = float(total)
             self.cd_state = "running"
+            self.tb.stop_flash()          # 用户已开始新一轮，停止闪烁
             self._set_entries_editable(False)
 
         elif self.cd_state == "running":
@@ -370,9 +556,17 @@ class App:
         self.cd_state = "finished"
         self.cd_remaining = 0.0
         self._set_entries_editable(True)
+        self.tb.flash()                  # 到点：任务栏图标闪烁
         threading.Thread(target=self._alarm_sound, daemon=True).start()
-        self.root.after(80, lambda: messagebox.showinfo(
-            "计时器", "倒计时结束，时间到！"))
+        self.root.after(80, self._show_alarm_dialog)
+
+    def _show_alarm_dialog(self):
+        self._alarm_open = True
+        try:
+            messagebox.showinfo("计时器", "倒计时结束，时间到！")
+        finally:
+            self._alarm_open = False
+            self.tb.stop_flash()          # 用户已确认，停止闪烁
 
     @staticmethod
     def _alarm_sound():
@@ -425,6 +619,7 @@ class App:
         self._render(force=True)
 
     def _reset(self):
+        self.tb.stop_flash()
         if self.mode == "countdown":
             # 重置 = 彻底清零：状态、显示、输入框全部回到 00:00:00
             # 注意：必须先解锁输入框，禁用状态下程序写入会被 Tk 静默忽略
@@ -522,6 +717,30 @@ class App:
         if force or primary != self._last_primary:
             self.btn_primary.config(text=primary)
             self._last_primary = primary
+
+        self._tb_sync()
+
+    # ==================================================
+    # 任务栏同步
+    # ==================================================
+    def _tb_sync(self):
+        """把当前倒计时状态映射到任务栏进度条"""
+        if self.cd_state == "running":
+            self.tb.progress(self.cd_remaining * 1000.0,
+                             max(1.0, self.cd_total) * 1000.0, TB_NORMAL)
+        elif self.cd_state == "paused":
+            self.tb.progress(self.cd_remaining * 1000.0,
+                             max(1.0, self.cd_total) * 1000.0, TB_PAUSED)
+        elif self.cd_state == "finished":
+            self.tb.set_state(TB_ERROR)           # 到点变红
+        else:                                      # idle
+            self.tb.clear()
+
+    def _on_focus(self, _event):
+        """窗口被用户激活时停止闪烁（Windows 惯例）；弹窗期间不打断"""
+        if self._alarm_open:
+            return
+        self.tb.stop_flash()
 
 
 def resource_path(name):

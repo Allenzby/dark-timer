@@ -16,6 +16,29 @@ timer._ALARM_CALLED = False
 timer.messagebox.showinfo = lambda *a, **k: setattr(timer, "_ALARM_CALLED", True)
 timer.App._alarm_sound = staticmethod(lambda: None)
 
+
+class FakeTB:
+    """假任务栏：记录调用，不碰真实系统"""
+    def __init__(self, root):
+        self.calls = []
+
+    def progress(self, value, total, state=timer.TB_NORMAL):
+        self.calls.append(("progress", value, total, state))
+
+    def set_state(self, state):
+        self.calls.append(("state", state))
+
+    def clear(self):
+        self.calls.append(("clear",))
+
+    def flash(self):
+        self.calls.append(("flash",))
+
+    def stop_flash(self):
+        self.calls.append(("stop_flash",))
+
+
+timer.TaskbarProgress = FakeTB
 results = []
 
 
@@ -41,6 +64,7 @@ check("初始输入框全为0",
       [e.get() for e in app.cd_entries] == ["0", "0", "0"],
       str([e.get() for e in app.cd_entries]))
 check("初始状态 idle", app.cd_state == "idle")
+check("初始任务栏无进度", app.tb.calls[-1] == ("clear",), str(app.tb.calls[-1]))
 
 # ---------- 2. 倒计时 2 秒走完 ----------
 for ent, v in zip(app.cd_entries, ("0", "0", "2")):
@@ -53,12 +77,22 @@ check("按钮变暂停", app.btn_primary.cget("text") == "暂停")
 pump(root, 0.6)
 t = app.lbl_time.cget("text")
 check("0.6秒后显示 00:00:02/01", t in ("00:00:02", "00:00:01"), t)
+prog = [c for c in app.tb.calls if c[0] == "progress"]
+check("运行中任务栏显示进度", len(prog) > 1, "共%d次" % len(prog))
+if prog:
+    check("进度为正常色", prog[-1][3] == timer.TB_NORMAL, str(prog[-1][3]))
+    check("进度从满开始", prog[0][1] > 1800, str(prog[0][1]))
+    check("进度在逐渐退", prog[-1][1] < prog[0][1],
+          "%d -> %d" % (prog[0][1], prog[-1][1]))
 pump(root, 1.8)
 check("走完变 finished", app.cd_state == "finished")
 check("显示归零", app.lbl_time.cget("text") == "00:00:00")
 check("弹窗已触发", timer._ALARM_CALLED)
 check("提示音线程已触发", timer.App._alarm_sound is not None)
 check("结束时输入框解锁", str(app.cd_entries[0].cget("state")) == "normal")
+check("到点触发任务栏闪烁", sum(1 for c in app.tb.calls if c == ("flash",)) == 1)
+check("到点进度变红", ("state", timer.TB_ERROR) in app.tb.calls)
+check("确认弹窗后停止闪烁", ("stop_flash",) in app.tb.calls)
 
 # ---------- 3. 暂停 / 继续 用时准确性 ----------
 for ent, v in zip(app.cd_entries, ("0", "0", "10")):
@@ -68,6 +102,8 @@ app._primary_action()          # 重新开始 10 秒
 pump(root, 1.0)
 app._primary_action()          # 暂停
 check("暂停状态", app.cd_state == "paused")
+prog_p = [c for c in app.tb.calls if c[0] == "progress" and c[3] == timer.TB_PAUSED]
+check("暂停时进度条变黄", len(prog_p) > 0, "共%d次" % len(prog_p))
 r1 = app.cd_remaining
 check("暂停约剩 9 秒", 8.5 < r1 < 9.2, "remain=%.2f" % r1)
 pump(root, 0.5)
@@ -85,6 +121,8 @@ check("重置后显示 00:00:00", app.lbl_time.cget("text") == "00:00:00",
 check("重置后输入框全为0",
       [e.get() for e in app.cd_entries] == ["0", "0", "0"],
       str([e.get() for e in app.cd_entries]))
+check("重置后任务栏进度清除", app.tb.calls[-1] == ("clear",),
+      str(app.tb.calls[-1]))
 
 # ---------- 4. 快捷时长 & 非法输入 ----------
 app._set_preset(25)
