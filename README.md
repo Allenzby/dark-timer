@@ -9,14 +9,16 @@
 - 🏃 **秒表**：精确到 0.01 秒，支持**计次**记录
 - 📌 **窗口置顶**开关（点击开启，再点取消）
 - ⌨️ 快捷键：`空格` 开始/暂停 · `R` 重置 · `L` 计次
-- 📦 单文件 exe（约 9 MB），双击即用，**无需安装 Python**
+- 🖥 **高分屏适配**：125% / 150% / 200% 缩放下字体清晰不发虚，布局等比放大
+- 📦 单文件 exe（约 8 MB），双击即用，**无需安装 Python**
 - 🐍 Python + Tkinter 编写，主程序单文件，附 52 项自动测试；
   任务栏功能用纯 `ctypes` 调 Windows API（`ITaskbarList3` + `FlashWindowEx`），零第三方依赖
 
 Taskbar progress bar that drains during countdown (turns yellow on pause, red at
 zero) · Taskbar icon flashing when time is up · Countdown with sound & popup
-alerts · Stopwatch with lap tracking · Always-on-top toggle · Single portable exe ·
-Python + Tkinter, zero dependencies · tested (52 assertions)
+alerts · Stopwatch with lap tracking · Always-on-top toggle · HiDPI-aware UI
+(100% / 150% / 200% scaling) · Single portable exe · Python + Tkinter, zero
+dependencies · tested (52 assertions)
 
 ## 界面预览
 
@@ -26,7 +28,7 @@ Python + Tkinter, zero dependencies · tested (52 assertions)
 
 ## 下载使用
 
-从 **[Releases](../../releases)** 页面下载 **`timer.exe`**（约 9 MB），双击运行——
+从 **[Releases](../../releases)** 页面下载 **`timer.exe`**（约 8 MB），双击运行——
 无需安装、无需 Python 环境，可拷贝到任意 Windows 电脑。
 
 ## 从源码运行 / 打包
@@ -37,6 +39,9 @@ python timer.py
 
 # 运行功能测试（52 项自动断言）
 python _dev\test_timer.py
+
+# 验证高分屏布局（模拟 100% / 150% / 200% 缩放，检查不裁切）
+python _dev\verify_dpi.py
 
 # 重新打包成 exe（--add-data 必须带上，否则窗口图标丢失）
 python -m PyInstaller --noconfirm --onefile --windowed `
@@ -66,6 +71,7 @@ dark-timer/
     ├── probe_taskbar.py    # 任务栏 COM / HWND 探测
     ├── verify_taskbar.py   # 进度条视觉验证（截图差分）
     ├── verify_e2e.py       # 端到端：进度递减 -> 到点闪烁
+    ├── verify_dpi.py       # 高分屏缩放验证（100% / 150% / 200%）
     └── capture_exe.py       # exe 运行验证
 ```
 

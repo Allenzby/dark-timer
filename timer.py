@@ -33,6 +33,9 @@ ACCENT_HOVER = "#2563EB"
 WARN = "#F59E0B"        # 时间到
 ENTRY_BG = "#1E222B"    # 输入框底色
 
+# 字体用「磅」，Tk 会按系统 DPI 自动放大；布局用像素，需要手动按 DPI 缩放
+SCALE = 1.0  # 布局像素缩放系数（96 DPI = 1.0），启动时按真实 DPI 计算
+
 FONT_UI = ("Microsoft YaHei UI", 10)
 FONT_UI_BOLD = ("Microsoft YaHei UI", 10, "bold")
 FONT_SMALL = ("Microsoft YaHei UI", 9)
@@ -41,6 +44,35 @@ FONT_SET = ("Consolas", 16, "bold")
 FONT_LAP = ("Consolas", 11)
 
 TICK_MS = 33  # 刷新间隔（毫秒），约 30 帧
+
+
+def px(value):
+    """把按 96 DPI 设计的像素值换算成当前屏幕的像素值"""
+    return int(round(value * SCALE))
+
+
+def enable_dpi_awareness():
+    """声明进程 DPI 感知，避免 125% / 150% 缩放下整个界面被系统拉伸发虚"""
+    if not IS_WINDOWS:
+        return
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)  # 系统级 DPI 感知
+        return
+    except Exception:
+        pass
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()        # Win7 兜底
+    except Exception:
+        pass
+
+
+def dpi_scale(root) -> float:
+    """读取 Tk 的实际缩放（像素/磅），换算成相对 96 DPI 的倍数"""
+    try:
+        dpi = float(root.tk.call("tk", "scaling")) * 72.0
+    except Exception:
+        return 1.0
+    return max(1.0, min(4.0, round(dpi / 96.0, 2)))
 
 
 def flat_button(parent, **kw):
@@ -235,11 +267,14 @@ class TaskbarProgress:
 
 class App:
     def __init__(self, root: tk.Tk):
+        global SCALE
+        SCALE = dpi_scale(root)          # 高分屏：布局像素按 DPI 等比放大
+
         self.root = root
         root.title("计时器")
         root.configure(bg=BG)
-        root.geometry("470x550")
-        root.minsize(470, 550)
+        root.geometry("{}x{}".format(px(470), px(550)))
+        root.minsize(px(470), px(550))
 
         # ---- 全局状态 ----
         self.mode = "countdown"          # countdown | stopwatch
@@ -284,7 +319,7 @@ class App:
 
         # ---------- 顶栏：模式切换 + 置顶开关 ----------
         topbar = tk.Frame(root, bg=BG)
-        topbar.grid(row=0, column=0, sticky="ew", padx=16, pady=(16, 0))
+        topbar.grid(row=0, column=0, sticky="ew", padx=px(16), pady=(px(16), 0))
 
         bar = tk.Frame(topbar, bg=BG)
         bar.pack(fill="x")
@@ -293,22 +328,22 @@ class App:
         seg.pack(side="left")
 
         self.btn_cd = flat_button(
-            seg, text="倒计时", width=8, pady=7, bg=ACCENT, fg="#FFFFFF",
+            seg, text="倒计时", width=8, pady=px(7), bg=ACCENT, fg="#FFFFFF",
             activebackground=ACCENT_HOVER, command=lambda: self._switch_mode("countdown"))
         self.btn_cd.pack(side="left")
 
         self.btn_sw = flat_button(
-            seg, text="秒表", width=8, pady=7, bg=CARD, fg=MUTED,
+            seg, text="秒表", width=8, pady=px(7), bg=CARD, fg=MUTED,
             activebackground=CARD_HOVER, command=lambda: self._switch_mode("stopwatch"))
         self.btn_sw.pack(side="left")
 
         self.btn_pin = flat_button(
-            bar, text="置顶", width=7, pady=7, bg=CARD, fg=MUTED,
+            bar, text="置顶", width=7, pady=px(7), bg=CARD, fg=MUTED,
             activebackground=CARD_HOVER, command=self._toggle_pin)
         self.btn_pin.pack(side="right")
 
         # 顶栏下的细分隔线
-        tk.Frame(topbar, bg="#22262E", height=1).pack(fill="x", pady=(14, 0))
+        tk.Frame(topbar, bg="#22262E", height=1).pack(fill="x", pady=(px(14), 0))
 
         # ---------- 时间显示 ----------
         disp = tk.Frame(root, bg=BG)
@@ -320,11 +355,11 @@ class App:
 
         self.lbl_status = tk.Label(
             disp, text="准备就绪", font=FONT_SMALL, bg=BG, fg=MUTED)
-        self.lbl_status.pack(pady=(0, 6))
+        self.lbl_status.pack(pady=(0, px(6)))
 
         # ---------- 模式内容容器 ----------
         self.mode_box = tk.Frame(root, bg=BG)
-        self.mode_box.grid(row=2, column=0, sticky="nsew", padx=16)
+        self.mode_box.grid(row=2, column=0, sticky="nsew", padx=px(16))
 
         self._build_countdown_box()
         self._build_stopwatch_box()
@@ -332,33 +367,34 @@ class App:
 
         # ---------- 操作按钮 ----------
         actions = tk.Frame(root, bg=BG)
-        actions.grid(row=3, column=0, sticky="ew", padx=16, pady=(14, 0))
+        actions.grid(row=3, column=0, sticky="ew", padx=px(16), pady=(px(14), 0))
 
         bar = tk.Frame(actions, bg=BG)
         bar.pack(side="top")  # 让按钮组整体水平居中
 
         self.btn_lap = flat_button(
-            bar, text="计次", width=8, pady=9, bg=CARD, fg=TEXT,
+            bar, text="计次", width=8, pady=px(9), bg=CARD, fg=TEXT,
             activebackground=CARD_HOVER, command=self._lap)
-        self.btn_lap.grid(row=0, column=0, padx=6)
+        self.btn_lap.grid(row=0, column=0, padx=px(6))
 
         self.btn_primary = flat_button(
-            bar, text="开始", width=10, pady=9, bg=ACCENT, fg="#FFFFFF",
+            bar, text="开始", width=10, pady=px(9), bg=ACCENT, fg="#FFFFFF",
             activebackground=ACCENT_HOVER, font=FONT_UI_BOLD,
             command=self._primary_action)
-        self.btn_primary.grid(row=0, column=1, padx=6)
+        self.btn_primary.grid(row=0, column=1, padx=px(6))
 
         self.btn_reset = flat_button(
-            bar, text="重置", width=8, pady=9, bg=CARD, fg=MUTED,
+            bar, text="重置", width=8, pady=px(9), bg=CARD, fg=MUTED,
             activebackground=CARD_HOVER, command=self._reset)
-        self.btn_reset.grid(row=0, column=2, padx=6)
+        self.btn_reset.grid(row=0, column=2, padx=px(6))
 
         self.btn_lap.grid_remove()  # 默认倒计时模式，隐藏「计次」
 
         # ---------- 底部快捷键提示 ----------
         tk.Label(
             root, text="空格 开始/暂停 · R 重置 · L 计次", font=FONT_SMALL,
-            bg=BG, fg="#565C66").grid(row=4, column=0, sticky="ew", pady=(16, 12))
+            bg=BG, fg="#565C66").grid(row=4, column=0, sticky="ew",
+                                      pady=(px(16), px(12)))
 
     def _build_countdown_box(self):
         self.cd_box = tk.Frame(self.mode_box, bg=BG)
@@ -366,7 +402,7 @@ class App:
 
         # 时 / 分 / 秒 设置行
         row = tk.Frame(self.cd_box, bg=BG)
-        row.pack(pady=(2, 10))
+        row.pack(pady=(px(2), px(10)))
 
         self.cd_entries = []
         vcmd = (self.root.register(
@@ -374,7 +410,7 @@ class App:
 
         for i, (label, default) in enumerate((("时", "0"), ("分", "0"), ("秒", "0"))):
             cell = tk.Frame(row, bg=BG)
-            cell.pack(side="left", padx=12)
+            cell.pack(side="left", padx=px(12))
 
             ent = tk.Entry(
                 cell, width=4, justify="center", font=FONT_SET,
@@ -386,19 +422,19 @@ class App:
             self.cd_entries.append(ent)
 
             tk.Label(cell, text=label, font=FONT_SMALL, bg=BG, fg=MUTED).pack(
-                pady=(4, 0))
+                pady=(px(4), 0))
 
         # 快捷时长
         presets = tk.Frame(self.cd_box, bg=BG)
-        presets.pack(pady=(0, 4))
+        presets.pack(pady=(0, px(4)))
 
         self.preset_buttons = []
         for text, m in (("1分钟", 1), ("5分钟", 5), ("10分钟", 10), ("25分钟", 25)):
             b = flat_button(
-                presets, text=text, padx=12, pady=5, bg=CARD, fg=MUTED,
+                presets, text=text, padx=px(12), pady=px(5), bg=CARD, fg=MUTED,
                 activebackground=CARD_HOVER, font=FONT_SMALL,
                 command=lambda mm=m: self._set_preset(mm))
-            b.pack(side="left", padx=6)
+            b.pack(side="left", padx=px(6))
             self.preset_buttons.append(b)
 
     def _build_stopwatch_box(self):
@@ -406,7 +442,7 @@ class App:
         self.sw_box.pack(fill="both", expand=True)
 
         head = tk.Frame(self.sw_box, bg=BG)
-        head.pack(fill="x", pady=(0, 6))
+        head.pack(fill="x", pady=(0, px(6)))
         tk.Label(head, text="计次记录", font=FONT_SMALL, bg=BG,
                  fg=MUTED).pack(side="left")
         self.lbl_lap_hint = tk.Label(head, text="运行后点击「计次」",
@@ -421,7 +457,7 @@ class App:
             highlightthickness=0, selectbackground=ACCENT,
             selectborderwidth=0, activestyle="none", justify="left")
         self.lap_list.pack(side="left", fill="both", expand=True,
-                           padx=10, pady=10)
+                           padx=px(10), pady=px(10))
         self.lap_list.bind(
             "<MouseWheel>",
             lambda e: self.lap_list.yview_scroll(-1 * (e.delta // 120), "units"))
@@ -475,7 +511,7 @@ class App:
         else:
             self.cd_box.pack_forget()
             self.sw_box.pack(fill="both", expand=True)
-            self.btn_lap.grid(row=0, column=0, padx=6)
+            self.btn_lap.grid(row=0, column=0, padx=px(6))
             self.root.grid_rowconfigure(1, weight=0)
             self.root.grid_rowconfigure(2, weight=1)
             self.btn_sw.config(bg=ACCENT, fg="#FFFFFF", activebackground=ACCENT_HOVER)
@@ -753,6 +789,7 @@ def resource_path(name):
 
 
 def main():
+    enable_dpi_awareness()          # 必须在创建 Tk 之前，否则窗口已按 96 DPI 建好
     root = tk.Tk()
     try:
         root.iconbitmap(resource_path("icon.ico"))  # 标题栏 + 任务栏图标

@@ -10,7 +10,11 @@ dist/
 # 验证/调试用临时截图
 _dev/exe_*.png
 _dev/tb_*.png
+_dev/dpi*.png
 _dev/*.zoom.png
+
+# 本机开发辅助（依赖本机 git 凭据，不随仓库分发）
+_dev/gh.ps1
 
 # 系统文件
 Thumbs.db
