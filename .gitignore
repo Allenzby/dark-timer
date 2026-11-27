@@ -11,6 +11,7 @@ dist/
 _dev/exe_*.png
 _dev/tb_*.png
 _dev/dpi*.png
+_dev/titlebar_*.png
 _dev/*.zoom.png
 
 # 本机开发辅助（依赖本机 git 凭据，不随仓库分发）

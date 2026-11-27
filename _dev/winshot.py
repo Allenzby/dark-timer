@@ -19,6 +19,36 @@ class BITMAPINFOHEADER(ctypes.Structure):
     ]
 
 
+def grab_hwnd(hwnd, rect=None):
+    """按窗口句柄抓图：PrintWindow(PW_RENDERFULLCONTENT)，窗口被遮挡也能截到"""
+    if rect is None:
+        r = wintypes.RECT()
+        user32.GetWindowRect(hwnd, ctypes.byref(r))
+        rect = (r.left, r.top, r.right, r.bottom)
+    x1, y1, x2, y2 = rect
+    w, h = x2 - x1, y2 - y1
+
+    hdc = user32.GetDC(0)
+    memdc = gdi32.CreateCompatibleDC(hdc)
+    bmp = gdi32.CreateCompatibleBitmap(hdc, w, h)
+    gdi32.SelectObject(memdc, bmp)
+    user32.PrintWindow(hwnd, memdc, 3)  # PW_RENDERFULLCONTENT
+
+    bi = BITMAPINFOHEADER()
+    bi.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+    bi.biWidth, bi.biHeight = w, -h
+    bi.biPlanes, bi.biBitCount = 1, 32
+    buf = ctypes.create_string_buffer(w * h * 4)
+    gdi32.GetDIBits(memdc, bmp, 0, h, buf, ctypes.byref(bi), 0)
+
+    gdi32.SelectObject(memdc, 0)
+    gdi32.DeleteObject(bmp)
+    gdi32.DeleteDC(memdc)
+    user32.ReleaseDC(0, hdc)
+
+    return Image.frombuffer("RGBA", (w, h), buf.raw, "raw", "BGRA", 0, 1)
+
+
 def grab(title):
     # 枚举所有同名窗口，取可见且面积最大的（避免抓到一闪而过的弹窗）
     user32 = ctypes.windll.user32
@@ -42,29 +72,6 @@ def grab(title):
         return True
 
     user32.EnumWindows(WNDENUMPROC(cb), 0)
-    hwnd = best
-    if not hwnd:
+    if not best:
         raise RuntimeError("窗口未找到: " + title)
-    r = wintypes.RECT()
-    user32.GetWindowRect(hwnd, ctypes.byref(r))
-    w, h = r.right - r.left, r.bottom - r.top
-
-    hdc = user32.GetDC(0)
-    memdc = gdi32.CreateCompatibleDC(hdc)
-    bmp = gdi32.CreateCompatibleBitmap(hdc, w, h)
-    gdi32.SelectObject(memdc, bmp)
-    user32.PrintWindow(hwnd, memdc, 3)  # PW_RENDERFULLCONTENT
-
-    bi = BITMAPINFOHEADER()
-    bi.biSize = ctypes.sizeof(BITMAPINFOHEADER)
-    bi.biWidth, bi.biHeight = w, -h
-    bi.biPlanes, bi.biBitCount = 1, 32
-    buf = ctypes.create_string_buffer(w * h * 4)
-    gdi32.GetDIBits(memdc, bmp, 0, h, buf, ctypes.byref(bi), 0)
-
-    gdi32.SelectObject(memdc, 0)
-    gdi32.DeleteObject(bmp)
-    gdi32.DeleteDC(memdc)
-    user32.ReleaseDC(0, hdc)
-
-    return Image.frombuffer("RGBA", (w, h), buf.raw, "raw", "BGRA", 0, 1)
+    return grab_hwnd(best)

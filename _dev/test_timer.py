@@ -58,13 +58,19 @@ root = tk.Tk()
 app = timer.App(root)
 root.update()
 
+
+def tb_visual():
+    """任务栏最近一次「可见状态」调用（忽略 stop_flash 这类无副作用的调用）"""
+    return [c for c in app.tb.calls
+            if c[0] in ("progress", "state", "clear")][-1]
+
 # ---------- 1. 初始状态 ----------
 check("初始显示 00:00:00", app.lbl_time.cget("text") == "00:00:00")
 check("初始输入框全为0",
       [e.get() for e in app.cd_entries] == ["0", "0", "0"],
       str([e.get() for e in app.cd_entries]))
 check("初始状态 idle", app.cd_state == "idle")
-check("初始任务栏无进度", app.tb.calls[-1] == ("clear",), str(app.tb.calls[-1]))
+check("初始任务栏无进度", tb_visual() == ("clear",), str(tb_visual()))
 
 # ---------- 2. 倒计时 2 秒走完 ----------
 for ent, v in zip(app.cd_entries, ("0", "0", "2")):
@@ -121,8 +127,8 @@ check("重置后显示 00:00:00", app.lbl_time.cget("text") == "00:00:00",
 check("重置后输入框全为0",
       [e.get() for e in app.cd_entries] == ["0", "0", "0"],
       str([e.get() for e in app.cd_entries]))
-check("重置后任务栏进度清除", app.tb.calls[-1] == ("clear",),
-      str(app.tb.calls[-1]))
+check("重置后任务栏进度清除", tb_visual() == ("clear",),
+      str(tb_visual()))
 
 # ---------- 4. 快捷时长 & 非法输入 ----------
 app._set_preset(25)

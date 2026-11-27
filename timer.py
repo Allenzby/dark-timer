@@ -75,6 +75,44 @@ def dpi_scale(root) -> float:
     return max(1.0, min(4.0, round(dpi / 96.0, 2)))
 
 
+def top_hwnd(root):
+    """顶层窗口句柄：winfo_id 返回的是子窗口，父窗口才是带标题栏的那个"""
+    if not IS_WINDOWS:
+        return 0
+    try:
+        user32 = ctypes.windll.user32
+        user32.GetParent.argtypes = [ctypes.c_void_p]
+        user32.GetParent.restype = ctypes.c_void_p
+        user32.IsWindow.argtypes = [ctypes.c_void_p]
+        user32.IsWindow.restype = ctypes.c_int
+        wid = user32.GetParent(root.winfo_id()) or root.winfo_id()
+        if user32.IsWindow(wid):
+            return wid
+    except Exception:
+        pass
+    return 0
+
+
+def enable_dark_titlebar(hwnd):
+    """把系统标题栏 / 窗口边框改成深色（DWM 沉浸式深色模式）"""
+    if not hwnd or not IS_WINDOWS:
+        return False
+    try:
+        dwm = ctypes.windll.dwmapi
+        dwm.DwmSetWindowAttribute.argtypes = [ctypes.c_void_p, ctypes.c_uint,
+                                              ctypes.c_void_p, ctypes.c_uint]
+        dwm.DwmSetWindowAttribute.restype = ctypes.c_long
+        value = ctypes.c_int(1)
+        # 20 = Win10 1903+ / Win11，19 = Win10 1809（老版本走这个编号）
+        for attr in (20, 19):
+            if dwm.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(value),
+                                         ctypes.sizeof(ctypes.c_int)) == 0:
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def flat_button(parent, **kw):
     """扁平风格按钮"""
     kw.setdefault("bd", 0)
@@ -298,12 +336,75 @@ class App:
         self._last_primary = None
         self._last_color = None
         self._alarm_open = False        # 到点弹窗是否正在显示
+        self._dialog_open = False       # 任意弹窗是否正在显示（调深色标题栏用）
 
         self._build()
         self._bind_keys()
         self.tb = TaskbarProgress(root)          # 任务栏进度 + 闪烁
         root.bind("<FocusIn>", self._on_focus)   # 窗口被激活时停止闪烁
+        root.update_idletasks()
+        self._apply_dark_titlebar()              # 标题栏深色（首帧）
+        root.bind("<Map>", lambda _e: self._apply_dark_titlebar(), add="+")
         self._tick()
+
+    # ==================================================
+    # 深色标题栏
+    # ==================================================
+    def _apply_dark_titlebar(self):
+        """把本窗口标题栏调成深色；系统不支持时静默跳过"""
+        hwnd = top_hwnd(self.root)
+        if hwnd:
+            enable_dark_titlebar(hwnd)
+
+    @staticmethod
+    def _own_windows(pid_want, skip_hwnd):
+        """枚举本进程的可见顶层窗口（排除主窗口）——不依赖前台焦点"""
+        user32 = ctypes.windll.user32
+        user32.GetWindowThreadProcessId.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
+        user32.IsWindowVisible.argtypes = [ctypes.c_void_p]
+        user32.IsWindowVisible.restype = ctypes.c_int
+        found = []
+        ENUM = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p,
+                                  ctypes.c_void_p)
+
+        @ENUM
+        def cb(hwnd, _lparam):
+            pid = ctypes.c_ulong()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if (pid.value == pid_want and hwnd != skip_hwnd
+                    and user32.IsWindowVisible(hwnd)):
+                found.append(hwnd)
+            return 1
+
+        user32.EnumWindows(cb, 0)
+        return found
+
+    def _darken_dialog(self):
+        """弹窗期间把自己弹出的对话框标题栏也调成深色"""
+        me = os.getpid()
+        hwnd_main = top_hwnd(self.root)
+        done = set()
+        until = time.monotonic() + 30
+        while self._dialog_open and time.monotonic() < until:
+            try:
+                for hwnd in self._own_windows(me, hwnd_main):
+                    if hwnd not in done:
+                        done.add(hwnd)
+                        enable_dark_titlebar(hwnd)
+            except Exception:
+                return
+            time.sleep(0.15)
+
+    def _dialog(self, func, *args, **kw):
+        """统一的弹窗入口：期间把自己弹出的对话框调成深色标题栏"""
+        self._dialog_open = True
+        if IS_WINDOWS:
+            threading.Thread(target=self._darken_dialog, daemon=True).start()
+        try:
+            func(*args, **kw)
+        finally:
+            self._dialog_open = False
 
     # ==================================================
     # 界面搭建
@@ -567,7 +668,8 @@ class App:
         if self.cd_state in ("idle", "finished"):
             total = self._parse_entries()
             if total <= 0:
-                messagebox.showwarning("计时器", "请先设置一个大于 0 的时间。")
+                self._dialog(messagebox.showwarning, "计时器",
+                             "请先设置一个大于 0 的时间。")
                 return
             self.cd_remaining = float(total)
             self.cd_target = now + self.cd_remaining
@@ -599,7 +701,7 @@ class App:
     def _show_alarm_dialog(self):
         self._alarm_open = True
         try:
-            messagebox.showinfo("计时器", "倒计时结束，时间到！")
+            self._dialog(messagebox.showinfo, "计时器", "倒计时结束，时间到！")
         finally:
             self._alarm_open = False
             self.tb.stop_flash()          # 用户已确认，停止闪烁
