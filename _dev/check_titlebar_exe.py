@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """验证打包后的 exe 标题栏是否深色（自动启动 exe -> 量色 -> 截图 -> 关闭）
 
+注意：运行前会先结束残留的「计时器.exe」进程，避免窗口重复或文件被锁。
+
 运行：python _dev\check_titlebar_exe.py
 """
 import ctypes
@@ -70,6 +72,10 @@ def caption_color(hwnd):
 if not EXE.exists():
     raise SystemExit("找不到 exe，请先打包：dist\\计时器.exe")
 
+# 先清掉残留实例（onefile 会派生子进程，只结束外层会留下窗口和文件锁）
+subprocess.run(["taskkill", "/F", "/T", "/IM", "计时器.exe"],
+               capture_output=True)
+
 proc = subprocess.Popen([str(EXE)])
 try:
     hwnd = 0
@@ -90,7 +96,9 @@ try:
     ok = lum < 90
     print("[{}] exe 标题栏为深色".format("PASS" if ok else "FAIL"))
 finally:
-    proc.terminate()
+    # 结束整棵进程树（onefile 的 bootloader 会再起一个子进程）
+    subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                   capture_output=True)
     try:
         proc.wait(timeout=5)
     except Exception:

@@ -11,7 +11,7 @@
 - ⌨️ 快捷键：`空格` 开始/暂停 · `R` 重置 · `L` 计次
 - 🖥 **高分屏适配**：125% / 150% / 200% 缩放下字体清晰不发虚，布局等比放大
 - 🌑 **深色标题栏**：主窗口与弹窗的系统标题栏、边框都跟随深色（DWM 沉浸式深色模式）
-- 📦 单文件 exe（约 8 MB），双击即用，**无需安装 Python**
+- 📦 单文件 exe（约 9 MB），双击即用，**无需安装 Python**
 - 🐍 Python + Tkinter 编写，主程序单文件，附 52 项自动测试；
   任务栏功能用纯 `ctypes` 调 Windows API（`ITaskbarList3` + `FlashWindowEx`），零第三方依赖
 
@@ -29,7 +29,7 @@ portable exe · Python + Tkinter, zero dependencies · tested (52 assertions)
 
 ## 下载使用
 
-从 **[Releases](../../releases)** 页面下载 **`timer.exe`**（约 8 MB），双击运行——
+从 **[Releases](../../releases)** 页面下载 **`timer.exe`**（约 9 MB），双击运行——
 无需安装、无需 Python 环境，可拷贝到任意 Windows 电脑。
 
 ## 从源码运行 / 打包
