@@ -29,8 +29,10 @@ portable exe · Python + Tkinter, zero dependencies · tested (52 assertions)
 
 ## 下载使用
 
-从 **[Releases](../../releases)** 页面下载 **`timer.exe`**（约 9 MB），双击运行——
-无需安装、无需 Python 环境，可拷贝到任意 Windows 电脑。
+从 **[Releases](../../releases)** 页面下载 **`DarkTimer-v1.1.2-windows-x64.exe`**（约 9 MB），
+双击运行——无需安装、无需 Python 环境，可拷贝到任意 Windows 电脑。
+
+> 下载文件名规则：`DarkTimer-版本-windows-x64.exe`，例如 `DarkTimer-v1.1.2-windows-x64.exe`。
 
 ## 从源码运行 / 打包
 
@@ -52,8 +54,9 @@ python -m PyInstaller --noconfirm --onefile --windowed `
     --name "计时器" --icon icon.ico --add-data "icon.ico;." timer.py
 ```
 
-> 发布到 GitHub Release 时，建议把文件重命名为英文 `timer.exe` 再上传，
-> 避免中文文件名在部分系统/下载工具下出现乱码。
+> 发布到 GitHub Release 时，把 exe 重命名为
+> `DarkTimer-v<版本>-windows-x64.exe`（如 `DarkTimer-v1.1.2-windows-x64.exe`）再上传：
+> 既带版本号方便区分新旧文件，又避免中文文件名在部分系统/下载工具下出现乱码。
 
 ## 项目结构
 
